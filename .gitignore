@@ -1,0 +1,8 @@
+# 项目排除路径
+/recommender/ContentRecommender/target/
+/recommender/DataLoader/target/
+/recommender/ItemCFRecommender/target/
+/recommender/KafkaStreaming/target/
+/recommender/OfflineRecommender/target/
+/recommender/OnlineRecommender/target/
+/recommender/StatisticsRecommender/target/
