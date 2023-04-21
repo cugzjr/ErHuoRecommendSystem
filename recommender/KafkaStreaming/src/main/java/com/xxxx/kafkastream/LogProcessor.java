@@ -19,9 +19,10 @@ public class LogProcessor implements Processor<byte[],byte[]> {
     @Override
     public void process(byte[] dummy, byte[] line) {
         String input = new String(line);
+        String perfix = "PRODUCT_RATING_PREFIX:";
         // 根据前缀过滤日志信息，提取后面的内容
-        if(input.contains("PRODUCT_RATING_PREFIX:")){
-            input = input.split("PRODUCT_RATING_PREFIX:")[1].trim();
+        if(input.contains(perfix)){
+            input = input.split(perfix)[1].trim();
             System.out.print(input);
             context.forward("logProcessor".getBytes(), input.getBytes());
         }
