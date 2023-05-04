@@ -3,11 +3,18 @@ package com.xxxx.content
 import org.apache.spark.SparkConf
 import org.apache.spark.ml.feature.{HashingTF, IDF, Tokenizer}
 import org.apache.spark.ml.linalg.SparseVector
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.jblas.DoubleMatrix
+import redis.clients.jedis.Jedis
 
+// 定义一个连接助手对象，建立到redis和mongodb的连接
+object ConnHelper extends Serializable{
+  // 懒变量定义，使用的时候才初始化
+  lazy val jedis = new Jedis("123.249.11.83", 8080)
+  jedis.auth("Zjr010205@")
+}
 
-case class Product( productId: Int, name: String, categories: String )
+case class Product( productId: Int, categories: String )
 case class MongoConfig( uri: String, db: String )
 
 // 定义标准推荐对象
@@ -24,7 +31,7 @@ object ContentRecommender {
   def main(args: Array[String]): Unit = {
     val config = Map(
       "spark.cores" -> "local[*]",
-      "mongo.uri" -> "mongodb://root:123456@123.249.11.83:27017/recommender?authSource=admin",
+      "mongo.uri" -> "mongodb://root:123456@124.70.143.70:27017/recommender?authSource=admin",
       "mongo.db" -> "recommender"
     )
     // 创建一个spark config
@@ -43,9 +50,9 @@ object ContentRecommender {
       .load()
       .as[Product]
       .map(
-        x => ( x.productId, x.name, x.categories.map(c=> if(c=='|') ' ' else c) )
+        x => ( x.productId, x.categories.map(c=> if(c=='|') ' ' else c) )
       )
-      .toDF("productId", "name", "categories")
+      .toDF("productId", "categories")
       .cache()
 
     // TODO: 用TF-IDF提取商品特征向量
@@ -85,7 +92,7 @@ object ContentRecommender {
         val simScore = consinSim( a._2, b._2 )
         ( a._1, ( b._1, simScore ) )
     }
-      .filter(_._2._2 > 0.4)
+      .filter(_._2._2 > 0.3)
       .groupByKey()
       .map{
         case (productId, recs) =>
@@ -98,10 +105,23 @@ object ContentRecommender {
       .mode("overwrite")
       .format("com.mongodb.spark.sql")
       .save()
-
+    saveDataToRedis(productRecs, ConnHelper.jedis)
     spark.stop()
   }
   def consinSim(product1: DoubleMatrix, product2: DoubleMatrix): Double ={
     product1.dot(product2)/ ( product1.norm2() * product2.norm2() )
+  }
+
+  def saveDataToRedis(productRecs: DataFrame, jedis: Jedis): Unit = {
+    productRecs.collect().foreach { case Row(productId: Int, recs: Seq[Row]) =>
+      val redisKey = s"ContentRecommend:$productId"
+      if (jedis.exists(redisKey)) {
+        jedis.del(redisKey)
+      }
+      recs.foreach { case Row(productId: Int, score: Double) =>
+        jedis.lpush(redisKey, s"$productId")
+      }
+    }
+    jedis.close()
   }
 }

@@ -11,8 +11,6 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
  */
 
 
-
-
 /**
  * 13543                                商品id
  * 蔡康永的说话之道                       商品名
@@ -20,7 +18,6 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
  */
 case class Product(
                     productId: Int,
-                    name: String,
                     categories: String
                   )
 
@@ -56,7 +53,7 @@ object DataLoader {
 
     val config = Map(
       "spark.cores" -> "local[*]",
-      "mongo.uri" -> "mongodb://root:123456@123.249.11.83:27017/recommender?authSource=admin",
+      "mongo.uri" -> "mongodb://root:123456@124.70.143.70:27017/recommender?authSource=admin",
       "mongo.db" -> "recommender"
     )
 
@@ -73,7 +70,7 @@ object DataLoader {
       //product数据通过 ^ 分割
       var attr = item.split(",")
       //转换为Product类
-      Product( attr(0).toInt, attr(1).trim, attr(2).trim)
+      Product( attr(0).toInt, attr(1).trim)
     }).toDF()
 
     val ratingRDD = spark.sparkContext.textFile(RATING_DATA_PATH)

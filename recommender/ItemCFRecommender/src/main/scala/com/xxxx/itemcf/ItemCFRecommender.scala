@@ -1,8 +1,15 @@
 package com.xxxx.itemcf
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import redis.clients.jedis.Jedis
 
+// 定义一个连接助手对象，建立到redis和mongodb的连接
+object ConnHelper extends Serializable{
+  // 懒变量定义，使用的时候才初始化
+  lazy val jedis = new Jedis("123.249.11.83", 8080)
+  jedis.auth("Zjr010205@")
+}
 
 case class ProductRating( userId: Int, productId: Int, score: Double, timestamp: Int )
 case class MongoConfig( uri: String, db: String )
@@ -16,12 +23,12 @@ object ItemCFRecommender {
   // 定义常量和表名
   val MONGODB_RATING_COLLECTION = "Rating"
   val ITEM_CF_PRODUCT_RECS = "ItemCFProductRecs"
-  val MAX_RECOMMENDATION = 10
+  val MAX_RECOMMENDATION = 50
 
   def main(args: Array[String]): Unit = {
     val config = Map(
       "spark.cores" -> "local[*]",
-      "mongo.uri" -> "mongodb://root:123456@123.249.11.83:27017/recommender?authSource=admin",
+      "mongo.uri" -> "mongodb://root:123456@124.70.143.70:27017/recommender?authSource=admin",
       "mongo.db" -> "recommender"
     )
     // 创建一个spark config
@@ -70,7 +77,6 @@ object ItemCFRecommender {
         |group by product1, product2
       """.stripMargin
     ).cache()
-
     // 提取需要的数据，包装成( productId1, (productId2, score) )
     val simDF = cooccurrenceDF.map{
       row =>
@@ -88,7 +94,6 @@ object ItemCFRecommender {
                                         .map(x=>Recommendation(x._1,x._2)) )
       }
       .toDF()
-
     // 保存到mongodb
     simDF.write
       .option("uri", mongoConfig.uri)
@@ -96,12 +101,25 @@ object ItemCFRecommender {
       .mode("overwrite")
       .format("com.mongodb.spark.sql")
       .save()
-
+    saveDataToRedis(simDF, ConnHelper.jedis)
     spark.stop()
   }
 
   // 按照公式计算同现相似度
   def cooccurrenceSim(coCount: Long, count1: Long, count2: Long): Double ={
     coCount / math.sqrt( count1 * count2 )
+  }
+
+  def saveDataToRedis(simDF: DataFrame, jedis: Jedis): Unit = {
+    simDF.collect().foreach { case Row(productId: Int, recs: Seq[Row]) =>
+      val redisKey = s"ItemCFRecommend:$productId"
+      if (jedis.exists(redisKey)) {
+        jedis.del(redisKey)
+      }
+      recs.foreach { case Row(productId: Int, score: Double) =>
+        jedis.lpush(redisKey, s"$productId")
+      }
+    }
+    jedis.close()
   }
 }

@@ -8,8 +8,6 @@
     </parent>
 
     <artifactId>KafkaStreaming</artifactId>
-    <packaging>jar</packaging>
-
     <name>KafkaStreaming</name>
 
     <dependencies>
@@ -34,7 +32,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.atguigu.kafkastream.Application</mainClass>
+                            <mainClass>com.xxxx.kafkastream.Application</mainClass>
                         </manifest>
                     </archive>
                     <descriptorRefs>

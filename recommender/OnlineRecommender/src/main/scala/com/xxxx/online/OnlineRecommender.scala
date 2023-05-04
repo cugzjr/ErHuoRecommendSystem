@@ -15,7 +15,7 @@ object ConnHelper extends Serializable{
   // 懒变量定义，使用的时候才初始化
   lazy val jedis = new Jedis("123.249.11.83", 8080)
   jedis.auth("Zjr010205@")
-  lazy val mongoClient = MongoClient(MongoClientURI("mongodb://root:123456@123.249.11.83:27017/recommender?authSource=admin"))
+  lazy val mongoClient = MongoClient(MongoClientURI("mongodb://root:123456@124.70.143.70:27017/recommender?authSource=admin"))
 }
 
 case class MongoConfig( uri: String, db: String )
@@ -34,12 +34,12 @@ object OnlineRecommender {
   val PRODUCT_RECS = "ProductRecs"
 
   val MAX_USER_RATING_NUM = 20
-  val MAX_SIM_PRODUCTS_NUM = 20
+  val MAX_SIM_PRODUCTS_NUM = 50
 
   def main(args: Array[String]): Unit = {
     val config = Map(
       "spark.cores" -> "local[*]",
-      "mongo.uri" -> "mongodb://root:123456@123.249.11.83:27017/recommender?authSource=admin",
+      "mongo.uri" -> "mongodb://root:123456@124.70.143.70:27017/recommender?authSource=admin",
       "mongo.db" -> "recommender",
       "kafka.topic" -> "recommender"
     )
@@ -106,6 +106,8 @@ object OnlineRecommender {
 
           // 4. 把推荐列表保存到mongodb
           saveDataToMongoDB( userId, streamRecs )
+
+          saveDataToRedis(userId, streamRecs, ConnHelper.jedis)
       }
     }
 
@@ -209,6 +211,18 @@ object OnlineRecommender {
     streamRecsCollection.findAndRemove( MongoDBObject( "userId" -> userId ) )
     streamRecsCollection.insert( MongoDBObject( "userId" -> userId,
                                   "recs" -> streamRecs.map(x=>MongoDBObject("productId"->x._1, "score"->x._2)) ) )
+  }
+
+  def saveDataToRedis(userId: Int, streamRecs: Array[(Int, Double)], jedis: Jedis):Unit ={
+    val redisKey = "StreamRecs:" + userId
+    if(jedis.exists(redisKey)){
+      jedis.rpop(redisKey)
+    }
+    // 存储当前推荐结果到Redis List
+    streamRecs.foreach { case (productId, score) =>
+      jedis.lpush(redisKey, s"$productId:$score")
+    }
+    jedis.close()
   }
 
 }

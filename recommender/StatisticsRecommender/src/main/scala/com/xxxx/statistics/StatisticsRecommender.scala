@@ -2,9 +2,16 @@ package com.xxxx.statistics
 
 import java.text.SimpleDateFormat
 import java.util.Date
-
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import redis.clients.jedis.Jedis
+
+// 定义一个连接助手对象，建立到redis和mongodb的连接
+object ConnHelper extends Serializable{
+  // 懒变量定义，使用的时候才初始化
+  lazy val jedis = new Jedis("123.249.11.83", 8080)
+  jedis.auth("Zjr010205@")
+}
 
 case class Rating( userId: Int, productId: Int, score: Double, timestamp: Int )
 case class MongoConfig( uri: String, db: String )
@@ -20,7 +27,7 @@ object StatisticsRecommender {
   def main(args: Array[String]): Unit = {
     val config = Map(
       "spark.cores" -> "local[1]",
-      "mongo.uri" -> "mongodb://root:123456@123.249.11.83:27017/recommender?authSource=admin",
+      "mongo.uri" -> "mongodb://root:123456@124.70.143.70:27017/recommender?authSource=admin",
       "mongo.db" -> "recommender"
     )
     // 创建一个spark config
@@ -57,6 +64,9 @@ object StatisticsRecommender {
     val ratingOfYearMonthDF = spark.sql("select productId, score, changeDate(timestamp) as yearmonth from ratings")
     ratingOfYearMonthDF.createOrReplaceTempView("ratingOfMonth")
     val rateMoreRecentlyProductsDF = spark.sql("select productId, count(productId) as count, yearmonth from ratingOfMonth group by yearmonth, productId order by yearmonth desc, count desc")
+
+    val productIds = rateMoreRecentlyProductsDF.select("productId").rdd.map(r => r(0).asInstanceOf[Int]).collect()
+    saveDataToRedis(productIds, ConnHelper.jedis)
     // 把df保存到mongodb
     storeDFInMongoDB( rateMoreRecentlyProductsDF, RATE_MORE_RECENTLY_PRODUCTS )
 
@@ -74,4 +84,17 @@ object StatisticsRecommender {
       .format("com.mongodb.spark.sql")
       .save()
   }
+
+  def saveDataToRedis(productIds: Array[(Int)], jedis: Jedis): Unit = {
+    val redisKey = "HomeRecommend:"
+    if (jedis.exists(redisKey)) {
+      jedis.rpop(redisKey)
+    }
+    // 存储当前推荐结果到Redis List
+    productIds.foreach { case (productId) =>
+      jedis.lpush(redisKey, s"$productId")
+    }
+    jedis.close()
+  }
+
 }
